@@ -106,12 +106,10 @@ func initCloudProvider(name string, configFilePath string) cloudprovider.Interfa
 }
 
 func newEtcd(etcdConfigFile string, etcdServerList util.StringList) (helper tools.EtcdHelper, err error) {
-	if etcdConfigFile == "" {
-		helper, err = master.NewEtcdHelper(etcdServerList, *storageVersion)
-	} else {
-		helper, err = master.NewConfiguredEtcdHelper(etcdConfigFile, *storageVersion)
+	if etcdConfigFile != "" {
+		return master.NewConfiguredEtcdHelper(etcdConfigFile, *storageVersion)
 	}
-	return helper, err
+	return master.NewEtcdHelper(etcdServerList, *storageVersion)
 }
 
 func main() {
