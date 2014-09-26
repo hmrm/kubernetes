@@ -17,6 +17,7 @@ limitations under the License.
 package master
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
@@ -70,6 +71,27 @@ type Master struct {
 // is incorrect.
 func NewEtcdHelper(etcdServers []string, version string) (helper tools.EtcdHelper, err error) {
 	client := goetcd.NewClient(etcdServers)
+	helper, err = buildEtcdHelper(client, version)
+	return helper, err
+}
+
+// NewConfiguredEtcdHelper returns an EtcdHelper built from an etcd client configured from
+// the file specified or an error if version is incorrect.
+// See https://github.com/coreos/go-etcd/blob/master/etcd/client.go.
+func NewConfiguredEtcdHelper(etcdConfigFilePath string, version string) (helper tools.EtcdHelper, err error) {
+	client, err := goetcd.NewClientFromFile(etcdConfigFilePath)
+	if err != nil {
+		return tools.EtcdHelper{}, err
+	}
+	if len(client.GetCluster()) == 0 {
+		return tools.EtcdHelper{}, errors.New("No etcd servers specified")
+	}
+
+	helper, err = buildEtcdHelper(client, version)
+	return helper, err
+}
+
+func buildEtcdHelper(client *goetcd.Client, version string) (helper tools.EtcdHelper, err error) {
 	if version == "" {
 		version = latest.Version
 	}

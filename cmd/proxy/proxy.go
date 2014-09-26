@@ -35,10 +35,11 @@ var (
 	master         = flag.String("master", "", "The address of the Kubernetes API server (optional)")
 	etcdServerList util.StringList
 	bindAddress    = flag.String("bindaddress", "0.0.0.0", "The address for the proxy server to serve on (set to 0.0.0.0 or \"\" for all interfaces)")
+	etcdConfigFile = flag.String("etcd_config", "", "The config file for the etcd client. Mutually exclusive with -etcd_servers")
 )
 
 func init() {
-	flag.Var(&etcdServerList, "etcd_servers", "List of etcd servers to watch (http://ip:port), comma separated (optional)")
+	flag.Var(&etcdServerList, "etcd_servers", "List of etcd servers to watch (http://ip:port), comma separated (optional). Mutually exclusive with -etcd_config")
 }
 
 func main() {
@@ -67,13 +68,28 @@ func main() {
 		)
 	}
 
-	// Create a configuration source that handles configuration from etcd.
-	if len(etcdServerList) > 0 && *master == "" {
-		glog.Infof("Using etcd servers %v", etcdServerList)
+	var etcdClient *etcd.Client
 
+	// Set up etcd client
+	if len(etcdServerList) > 0 {
 		// Set up logger for etcd client
 		etcd.SetLogger(util.NewLogger("etcd "))
-		etcdClient := etcd.NewClient(etcdServerList)
+		etcdClient = etcd.NewClient(etcdServerList)
+	} else if *etcdConfigFile != "" {
+		// Set up logger for etcd client
+		etcd.SetLogger(util.NewLogger("etcd "))
+		var err error
+		etcdClient, err = etcd.NewClientFromFile(*etcdConfigFile)
+
+		if err != nil {
+			glog.Fatalf("Error with etcd config file: %v", err)
+		}
+	}
+
+	// Create a configuration source that handles configuration from etcd.
+	if etcdClient != nil && *master == "" {
+		glog.Infof("Using etcd servers %v", etcdClient.GetCluster())
+
 		config.NewConfigSourceEtcd(etcdClient,
 			serviceConfig.Channel("etcd"),
 			endpointsConfig.Channel("etcd"))
