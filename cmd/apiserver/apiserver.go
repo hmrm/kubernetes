@@ -35,6 +35,8 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/tools"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/util"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/version/verflag"
+
+	"github.com/coreos/go-etcd/etcd"
 	"github.com/golang/glog"
 )
 
@@ -106,10 +108,17 @@ func initCloudProvider(name string, configFilePath string) cloudprovider.Interfa
 }
 
 func newEtcd(etcdConfigFile string, etcdServerList util.StringList) (helper tools.EtcdHelper, err error) {
+	var client tools.EtcdGetSet
 	if etcdConfigFile != "" {
-		return master.NewConfiguredEtcdHelper(etcdConfigFile, *storageVersion)
+		client, err = etcd.NewClientFromFile(etcdConfigFile)
+		if err != nil {
+			return helper, err
+		}
+	} else {
+		client = etcd.NewClient(etcdServerList)
 	}
-	return master.NewEtcdHelper(etcdServerList, *storageVersion)
+
+	return master.NewEtcdHelper(client, *storageVersion)
 }
 
 func main() {
