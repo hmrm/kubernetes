@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
-	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -28,56 +27,57 @@ import (
 
 	"code.google.com/p/go.net/html"
 	"code.google.com/p/go.net/html/atom"
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/client"
 	"github.com/golang/glog"
 )
 
 // TODO: replace with proxy handler on minions
-func handleProxyMinion(w http.ResponseWriter, req *http.Request) {
-	path := strings.TrimLeft(req.URL.Path, "/")
-	rawQuery := req.URL.RawQuery
+func handleProxyMinion(client *client.HTTPKubeletClient) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, req *http.Request) {
+		path := strings.TrimLeft(req.URL.Path, "/")
+		rawQuery := req.URL.RawQuery
 
-	// Expect path as: ${minion}/${query_to_minion}
-	// and query_to_minion can be any query that kubelet will accept.
-	//
-	// For example:
-	// To query stats of a minion or a pod or a container,
-	// path string can be ${minion}/stats/<podid>/<containerName> or
-	// ${minion}/podInfo?podID=<podid>
-	//
-	// To query logs on a minion, path string can be:
-	// ${minion}/logs/
-	parts := strings.SplitN(path, "/", 2)
-	if len(parts) != 2 {
-		badGatewayError(w, req)
-		return
-	}
-	minionHost := parts[0]
-	_, port, _ := net.SplitHostPort(minionHost)
-	if port == "" {
-		// Couldn't retrieve port information
-		// TODO: Retrieve port info from a common object
-		minionHost += ":10250"
-	}
-	minionPath := "/" + parts[1]
+		// Expect path as: ${minion}/${query_to_minion}
+		// and query_to_minion can be any query that kubelet will accept.
+		//
+		// For example:
+		// To query stats of a minion or a pod or a container,
+		// path string can be ${minion}/stats/<podid>/<containerName> or
+		// ${minion}/podInfo?podID=<podid>
+		//
+		// To query logs on a minion, path string can be:
+		// ${minion}/logs/
+		parts := strings.SplitN(path, "/", 2)
+		if len(parts) != 2 {
+			badGatewayError(w, req)
+			return
+		}
+		minionHost := parts[0]
+		minionPath := "/" + parts[1]
 
-	minionURL := &url.URL{
-		Scheme: "http",
-		Host:   minionHost,
-	}
-	newReq, err := http.NewRequest("GET", minionPath+"?"+rawQuery, nil)
-	if err != nil {
-		glog.Errorf("Failed to create request: %s", err)
-	}
+		clientUrl := client.Url(minionHost)
+		minionURL, err := url.Parse(clientUrl)
+		if err != nil {
+			glog.Errorf("Failed to parse url %s: %v", clientUrl, err)
+		}
 
-	proxy := httputil.NewSingleHostReverseProxy(minionURL)
-	proxy.Transport = &minionTransport{}
-	proxy.ServeHTTP(w, newReq)
+		newReq, err := http.NewRequest("GET", minionPath+"?"+rawQuery, nil)
+		if err != nil {
+			glog.Errorf("Failed to create request: %s", err)
+		}
+
+		proxy := httputil.NewSingleHostReverseProxy(minionURL)
+		proxy.Transport = &minionTransport{client.Client.Transport}
+		proxy.ServeHTTP(w, newReq)
+	}
 }
 
-type minionTransport struct{}
+type minionTransport struct {
+	underlying http.RoundTripper
+}
 
 func (t *minionTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	resp, err := http.DefaultTransport.RoundTrip(req)
+	resp, err := t.underlying.RoundTrip(req)
 
 	if err != nil {
 		if strings.Contains(err.Error(), "connection refused") {

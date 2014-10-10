@@ -37,6 +37,7 @@ import (
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/apiserver"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/client"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/controller"
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/health"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/config"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/kubelet/dockertools"
@@ -58,20 +59,20 @@ var (
 	fakeDocker1, fakeDocker2 dockertools.FakeDockerClient
 )
 
-type fakePodInfoGetter struct{}
+type fakeKubeletClient struct{}
 
-func (fakePodInfoGetter) GetPodInfo(host, podNamespace, podID string) (api.PodInfo, error) {
+func (fakeKubeletClient) GetPodInfo(host, podNamespace, podID string) (api.PodInfo, error) {
 	// This is a horrible hack to get around the fact that we can't provide
 	// different port numbers per kubelet...
 	var c client.PodInfoGetter
 	switch host {
 	case "localhost":
-		c = &client.HTTPPodInfoGetter{
+		c = &client.HTTPKubeletClient{
 			Client: http.DefaultClient,
 			Port:   10250,
 		}
 	case "machine":
-		c = &client.HTTPPodInfoGetter{
+		c = &client.HTTPKubeletClient{
 			Client: http.DefaultClient,
 			Port:   10251,
 		}
@@ -79,6 +80,10 @@ func (fakePodInfoGetter) GetPodInfo(host, podNamespace, podID string) (api.PodIn
 		glog.Fatalf("Can't get info for: '%v', '%v'", host, podNamespace, podID)
 	}
 	return c.GetPodInfo("localhost", podNamespace, podID)
+}
+
+func (fakeKubeletClient) Healthcheck(host string) (health.Status, error) {
+	return health.Healthy, nil
 }
 
 type delegateHandler struct {
@@ -127,7 +132,7 @@ func startComponents(manifestURL string) (apiServerURL string) {
 		Client:        cl,
 		EtcdHelper:    helper,
 		Minions:       machineList,
-		PodInfoGetter: fakePodInfoGetter{},
+		KubeletClient: fakeKubeletClient{},
 	})
 	mux := http.NewServeMux()
 	apiserver.NewAPIGroup(m.API_v1beta1()).InstallREST(mux, "/api/v1beta1")
@@ -179,7 +184,7 @@ func startComponents(manifestURL string) (apiServerURL string) {
 
 // podsOnMinions returns true when all of the selected pods exist on a minion.
 func podsOnMinions(c *client.Client, pods api.PodList) wait.ConditionFunc {
-	podInfo := fakePodInfoGetter{}
+	podInfo := fakeKubeletClient{}
 	return func() (bool, error) {
 		for i := range pods.Items {
 			host, id, namespace := pods.Items[i].CurrentState.Host, pods.Items[i].ID, pods.Items[i].Namespace

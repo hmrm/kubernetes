@@ -61,6 +61,16 @@ type Config struct {
 	Transport http.RoundTripper
 }
 
+type KubeletConfig struct {
+	Port        uint
+	EnableHttps bool
+
+	// Kubelet Server requires TLS client certificate authentication
+	CertFile string
+	KeyFile  string
+	CAFile   string
+}
+
 // New creates a Kubernetes client for the given config. This client works with pods,
 // replication controllers and services. It allows operations such as list, get, update
 // and delete on these objects. An error is returned if the provided configuration

@@ -17,7 +17,6 @@ limitations under the License.
 package master
 
 import (
-	"net/http"
 	"time"
 
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/api"
@@ -50,7 +49,7 @@ type Config struct {
 	Minions            []string
 	MinionCacheTTL     time.Duration
 	MinionRegexp       string
-	PodInfoGetter      client.PodInfoGetter
+	KubeletClient      client.KubeletClient
 	NodeResources      api.NodeResources
 }
 
@@ -95,7 +94,7 @@ func New(c *Config) *Master {
 		minionRegistry:     minionRegistry,
 		client:             c.Client,
 	}
-	m.init(c.Cloud, c.PodInfoGetter)
+	m.init(c.Cloud, c.KubeletClient)
 	return m
 }
 
@@ -118,7 +117,7 @@ func makeMinionRegistry(c *Config) minion.Registry {
 		}
 	}
 	if c.HealthCheckMinions {
-		minionRegistry = minion.NewHealthyRegistry(minionRegistry, &http.Client{})
+		minionRegistry = minion.NewHealthyRegistry(minionRegistry, c.KubeletClient)
 	}
 	if c.MinionCacheTTL > 0 {
 		cachingMinionRegistry, err := minion.NewCachingRegistry(minionRegistry, c.MinionCacheTTL)

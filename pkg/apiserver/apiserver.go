@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/client"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/healthz"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/runtime"
 	"github.com/GoogleCloudPlatform/kubernetes/pkg/version"
@@ -121,7 +122,6 @@ func (g *APIGroup) InstallREST(mux mux, paths ...string) {
 // InstallSupport registers the APIServer support functions into a mux.
 func InstallSupport(mux mux) {
 	healthz.InstallHandler(mux)
-	mux.Handle("/proxy/minion/", http.StripPrefix("/proxy/minion", http.HandlerFunc(handleProxyMinion)))
 	mux.HandleFunc("/version", handleVersion)
 	mux.HandleFunc("/", handleIndex)
 }
@@ -129,6 +129,11 @@ func InstallSupport(mux mux) {
 // InstallLogsSupport registers the APIServer log support function into a mux.
 func InstallLogsSupport(mux mux) {
 	mux.Handle("/logs/", http.StripPrefix("/logs/", http.FileServer(http.Dir("/var/log/"))))
+}
+
+// InstallProxySupport registers the APIServer proxy support function into a mux
+func InstallProxySupport(mux mux, podInfoGetter *client.HTTPKubeletClient) {
+	mux.Handle("/proxy/minion/", http.StripPrefix("/proxy/minion", http.HandlerFunc(handleProxyMinion(podInfoGetter))))
 }
 
 // handleVersion writes the server's version information.

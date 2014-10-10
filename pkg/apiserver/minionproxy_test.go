@@ -23,13 +23,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/GoogleCloudPlatform/kubernetes/pkg/client"
 )
 
 func TestMinionTransport(t *testing.T) {
 	content := string(`<pre><a href="kubelet.log">kubelet.log</a><a href="google.log">google.log</a></pre>`)
-	transport := &minionTransport{}
+	transport := &minionTransport{http.DefaultTransport}
 
 	// Test /logs/
 	request := &http.Request{
@@ -80,13 +83,19 @@ func TestMinionProxy(t *testing.T) {
 	proxyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.Write([]byte(req.URL.Path))
 	}))
-	server := httptest.NewServer(http.HandlerFunc(handleProxyMinion))
-	//client := http.Client{}
+
 	proxy, _ := url.Parse(proxyServer.URL)
+	port, _ := strconv.ParseUint(strings.Split(proxy.Host, ":")[1], 10, 32)
+	host := strings.Split(proxy.Host, ":")[0]
+
+	server := httptest.NewServer(http.HandlerFunc(handleProxyMinion(&client.HTTPKubeletClient{
+		Client: &http.Client{Transport: http.DefaultTransport},
+		Port:   uint(port),
+	})))
 
 	testCases := map[string]string{
-		fmt.Sprintf("/%s/", proxy.Host):     "/",
-		fmt.Sprintf("/%s/test", proxy.Host): "/test",
+		fmt.Sprintf("/%s/", host):     "/",
+		fmt.Sprintf("/%s/test", host): "/test",
 	}
 
 	for value, expected := range testCases {
@@ -120,25 +129,5 @@ func TestMinionProxy(t *testing.T) {
 		if resp.StatusCode != http.StatusBadGateway {
 			t.Errorf("expected bad gateway response for %s: %#v", value, resp)
 		}
-	}
-}
-
-func TestApiServerMinionProxy(t *testing.T) {
-	proxyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		w.Write([]byte(req.URL.Path))
-	}))
-	server := httptest.NewServer(Handle(nil, nil, "/prefix", selfLinker))
-	proxy, _ := url.Parse(proxyServer.URL)
-	resp, err := http.Get(fmt.Sprintf("%s/proxy/minion/%s%s", server.URL, proxy.Host, "/test"))
-	if err != nil {
-		t.Fatalf("unexpected error %v", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected successful request, got %#v", resp)
-	}
-	defer resp.Body.Close()
-	actual, _ := bufio.NewReader(resp.Body).ReadString('\n')
-	if actual != "/test" {
-		t.Errorf("unexpected response body %s", actual)
 	}
 }
